@@ -336,15 +336,13 @@ const videoDuration =
   );
 
 // 時間からフレーム数を計算
-const totalFrames = 420;
-/*
+const totalFrames =
   Math.floor(
     videoDuration * values.fps
   );
 console.log({
   totalFrames,
 });
-*/
 
 
 // タイルサーバ起動

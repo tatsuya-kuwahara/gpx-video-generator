@@ -22,10 +22,11 @@ node generate-video.js -g input.gpx -m output.mp4
 * Node.js
 * FFmpeg
 * TileServer-GL
+* maplibre
 
 ## Map Data
 
-MBTilesファイルはリポジトリに含まれていません。
+TileServer-GLとMBTilesファイルはリポジトリに含まれていません。
 
 別途取得し、serverディレクトリに配置してください。
 
