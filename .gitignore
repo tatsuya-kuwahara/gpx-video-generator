@@ -1,0 +1,10 @@
+node_modules/
+frames/
+gpx_log/
+frames/
+public/
+*.mp4
+
+
+.env
+.DS_Store
