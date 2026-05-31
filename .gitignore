@@ -4,7 +4,7 @@ gpx_log/
 frames/
 public/
 *.mp4
-
+!sample.mp4
 
 .env
 .DS_Store
