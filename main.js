@@ -11,23 +11,38 @@ const map = new maplibregl.Map({
   zoom: 11,
 });
 
+window.map = map;
+
 window.mapReady = false;
 
 map.addControl(new maplibregl.NavigationControl());
 
-async function loadGPX() {
-  const response = await fetch("./route.gpx");
+const routeData = await fetch(
+  "/routeData.json"
+).then(r => r.json());
 
-  const text = await response.text();
-  
-  const parser = new DOMParser();
-  const xml = parser.parseFromString(
-    text,
-    "text/xml"
+const geojson = await fetch(
+  "/route.geojson"
+).then(r => r.json());
+
+const params =
+  new URLSearchParams(
+    location.search
   );
 
-  const geojson = gpx(xml);
+const defaultTotalFrames =
+  Number(
+    params.get("frames")
+  );
 
+console.log(defaultTotalFrames);
+
+const isCapture =
+  new URLSearchParams(
+    location.search
+  ).get("capture") === "1";
+
+async function loadGPX() {
   const coordinates =
     geojson.features[0].geometry.coordinates;
 
@@ -78,11 +93,27 @@ async function loadGPX() {
       padding: 40,
     });
 
-    // アニメーション開始
-    animateRoute(coordinates);
+    createRenderer(routeData);
+    
+    // 1フレーム目が真っ白にならないための処理
+    window.renderFrame(0, defaultTotalFrames);
+    map.once("idle", () => {
+    window.mapIdle = true;
+    });
+
+    if(!isCapture) {
+      // アニメーション開始
+      let frame = 0;
+      setInterval(() => {
+        window.renderFrame(frame, defaultTotalFrames);
+        frame++;
+      }, 33);
+    }
+    
   });
 }
 
+/*
 function animateRoute(coordinates) {
   let i = 0;
 
@@ -128,6 +159,313 @@ function animateRoute(coordinates) {
 
     i++;
   }, 30);
+}
+*/
+/*
+function animateRoute(
+  routeData
+) {
+  const source =
+    map.getSource("route");
+
+  const totalDistance =
+    routeData[
+      routeData.length - 1
+    ].cumulativeDistance;
+
+  const totalFrames = 2700;
+
+  let frame = 0;
+
+  const interval =
+    setInterval(() => {
+
+      if (
+        frame >= totalFrames
+      ) {
+
+        clearInterval(
+          interval
+        );
+
+        return;
+      }
+
+      const progress =
+        frame /
+        (totalFrames - 1);
+
+      const targetDistance =
+        totalDistance *
+        progress;
+      
+      const position =
+        getPositionForFrame(
+          frame,
+          totalFrames,
+          totalDistance,
+          routeData
+        );
+
+      console.log({
+        frame,
+        targetDistance,
+        totalDistance,
+        position
+      });
+      
+      console.log(
+        routeData[0]
+      );
+
+      console.log(
+        routeData[
+          routeData.length - 1
+        ]
+      );
+
+      const coordinates =
+        getLineUpToDistance(
+          routeData,
+          targetDistance
+        );
+
+        source.setData({
+        type: "Feature",
+
+        geometry: {
+          type: "LineString",
+
+          coordinates
+        }
+      });
+
+      map.jumpTo({
+        center: [
+          position.lng,
+          position.lat
+        ],
+
+        zoom: 14,
+
+        pitch: 30
+      });
+
+      frame++;
+
+    }, 33);
+}
+*/
+
+function createRenderer(routeData) {
+
+  console.log(
+  "createRenderer called"
+  );
+
+  const source = map.getSource("route");
+
+  console.log("source", source);
+
+  const totalDistance =
+    routeData[
+      routeData.length - 1
+    ].cumulativeDistance;
+
+  window.renderFrame =
+    function(frame, totalFrames) {
+      //console.log(arguments);
+
+      const progress =
+        frame /
+        (totalFrames - 1);
+
+      const targetDistance =
+        totalDistance *
+        progress;
+
+      
+      console.log(
+        "renderFrame",
+        frame,
+        totalFrames
+      );
+      
+
+      const position =
+        getPositionAtDistance(
+          routeData,
+          targetDistance
+        );
+
+      const coordinates =
+        getLineUpToDistance(
+          routeData,
+          targetDistance
+        );
+      /*
+      console.log(
+      frame,
+      coordinates.length
+      );
+      */
+
+      source.setData({
+        type: "Feature",
+
+        geometry: {
+          type: "LineString",
+
+          coordinates
+        }
+      });
+
+      map.jumpTo({
+        center: [
+          position.lng,
+          position.lat
+        ],
+
+        zoom: 14,
+
+        pitch: 30
+      });
+
+      window.lastRenderedFrame = frame;
+    };
+}
+
+function getLineUpToDistance(
+  routeData,
+  targetDistance
+) {
+
+  const coordinates =
+    [];
+
+  for (let i = 0; i < routeData.length; i++) {
+
+    const point =
+      routeData[i];
+
+    if (point.cumulativeDistance <= targetDistance) {
+      coordinates.push([
+          point.lng,
+          point.lat
+        ]);
+
+    } else {
+
+      break;
+    }
+  }
+
+  const currentPosition =
+    getPositionAtDistance(
+      routeData,
+      targetDistance
+    );
+
+  coordinates.push([
+    currentPosition.lng,
+    currentPosition.lat
+  ]);
+
+  return coordinates;
+}
+
+function getPositionForFrame(
+  frame,
+  totalFrames,
+  totalDistance,
+  routeData
+) {
+  const progress =
+    frame /
+    (totalFrames - 1);
+
+  const targetDistance =
+    totalDistance * progress;
+
+  return getPositionAtDistance(
+    routeData,
+    targetDistance
+  );
+}
+
+// スタート地点から指定された距離の座標を元のデータを線形補完して返す
+function getPositionAtDistance(
+  routeData,
+  targetDistance
+) {
+
+  if (targetDistance <= 0) {
+    return routeData[0];
+  }
+
+  const last =
+    routeData[
+      routeData.length - 1
+    ];
+
+  if (
+    targetDistance >=
+    last.cumulativeDistance
+  ) {
+    return last;
+  }
+
+  for (
+    let i = 1;
+    i < routeData.length;
+    i++
+  ) {
+
+    const prev =
+      routeData[i - 1];
+
+    const next =
+      routeData[i];
+
+    if (
+      targetDistance <=
+      next.cumulativeDistance
+    ) {
+
+      const t =
+        (
+          targetDistance -
+          prev.cumulativeDistance
+        )
+        /
+        (
+          next.cumulativeDistance -
+          prev.cumulativeDistance
+        );
+
+      return {
+
+        lng:
+          prev.lng +
+          (
+            next.lng -
+            prev.lng
+          ) * t,
+
+        lat:
+          prev.lat +
+          (
+            next.lat -
+            prev.lat
+          ) * t,
+
+        cumulativeDistance:
+          targetDistance
+      };
+    }
+  }
+
+  return last;
 }
 
 loadGPX();

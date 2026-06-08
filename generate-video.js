@@ -9,7 +9,8 @@ const options = {
     inputGPX: {type: 'string', short: 'g'},
     outputMP4: {type: 'string', short: 'm', default: 'videos/output.mp4'},
     fps: {type: 'string', short: 'f', default: '30'},
-    duration: {type: 'string', short: 'd'}
+    duration: {type: 'string', short: 'd'},
+    preview: {type: 'boolean', short: 'p'}
 }
 
 // 引数のチェックと解析
@@ -21,10 +22,10 @@ try {
   console.log(values); 
 
   if (!values.inputGPX) {
-    throw new Error('エラー: --inputGPX (-gpx) オプションは必須です。');
+    throw new Error('エラー: --inputGPX (-g) オプションは必須です。');
   }
   if (!values.outputMP4) {
-    throw new Error('エラー: --inputGPX (-gpx) オプションは必須です。');
+    throw new Error('エラー: --outputMP4 (-m) オプションは必須です。');
   }
 
 } catch (error) {
@@ -134,6 +135,15 @@ const xml =
 
 const routeData = parseGPX(xml);
 const geoJSON = createGeoJSON(routeData);
+// 作成したJSONファイルを保存する
+fs.writeFileSync(
+  "./public/routeData.json",
+  JSON.stringify(routeData)
+);
+fs.writeFileSync(
+  "./public/route.geojson",
+  JSON.stringify(geoJSON)
+);
 
 
 /**
@@ -204,6 +214,8 @@ function parseGPX(xmlDoc) {
         );
     }
 
+    let cumulativeDistance = totalDistance;
+
     routeData.push({
       lng,
       lat,
@@ -212,7 +224,7 @@ function parseGPX(xmlDoc) {
 
       timestamp,
 
-      totalDistance
+      cumulativeDistance
     });
   }
 
@@ -251,89 +263,10 @@ function createGeoJSON(
   };
 }
 
-function getPositionAtDistance(
-  routeData,
-  targetDistance
-) {
 
-  if (targetDistance <= 0) {
-    return routeData[0];
-  }
 
-  const last =
-    routeData[
-      routeData.length - 1
-    ];
-
-  if (
-    targetDistance >=
-    last.cumulativeDistance
-  ) {
-    return last;
-  }
-
-  for (
-    let i = 1;
-    i < routeData.length;
-    i++
-  ) {
-
-    const prev =
-      routeData[i - 1];
-
-    const next =
-      routeData[i];
-
-    if (
-      targetDistance <=
-      next.cumulativeDistance
-    ) {
-
-      const t =
-        (
-          targetDistance -
-          prev.cumulativeDistance
-        )
-        /
-        (
-          next.cumulativeDistance -
-          prev.cumulativeDistance
-        );
-
-      return {
-
-        lng:
-          prev.lng +
-          (
-            next.lng -
-            prev.lng
-          ) * t,
-
-        lat:
-          prev.lat +
-          (
-            next.lat -
-            prev.lat
-          ) * t,
-
-        cumulativeDistance:
-          targetDistance
-      };
-    }
-  }
-
-  return last;
-}
-
-// 総距離から動画時間を決定
-const videoDuration =
-  Math.min(
-    90,
-    Math.max(
-      15,
-      totalDistance * 0.8
-    )
-  );
+// 動画時間の指定がない場合、総距離から動画時間を決定
+const videoDuration = values.duration ? values.duration : Math.min(90, Math.max(15, totalDistance * 0.8));
 
 // 時間からフレーム数を計算
 const totalFrames =
@@ -395,50 +328,43 @@ await Promise.all([
   )
 ]);
 
+// previewオプションがtrueの場合はキャプチャを行わない
+if(!values.preview) {
+  console.log("capture start");
+  // capture-videoにフレーム数を渡す
+  execSync(
+    "node capture.js",
+    {
+      stdio: "inherit",
 
-// capture-videoにフレーム数を渡す
-execSync(
-  "node capture.js",
-  {
+      env: {
+        ...process.env,
+
+        TOTAL_FRAMES:
+          String(totalFrames),
+      },
+    }
+  );
+
+  console.log("ffmpeg start");
+
+  // MP4化
+  execSync(`
+  ffmpeg \
+  -framerate ${values.fps} \
+  -i frames/%06d.png \
+  -c:v libx264 \
+  -pix_fmt yuv420p \
+  ${values.outputMP4}
+  `, {
     stdio: "inherit",
+  });
 
-    env: {
-      ...process.env,
+  console.log(
+    `complete: ${values.outputMP4}`
+  );
 
-      TOTAL_FRAMES:
-        String(totalFrames),
-    },
-  }
-);
+  tileServer.kill();
 
-console.log("capture start");
-
-// PNG生成
-execSync(
-  "node capture.js",
-  {
-    stdio: "inherit",
-  }
-);
-
-console.log("ffmpeg start");
-
-// MP4化
-execSync(`
-ffmpeg \
--framerate 10 \
--i frames/frame%04d.png \
--c:v libx264 \
--pix_fmt yuv420p \
-${values.outputMP4}
-`, {
-  stdio: "inherit",
-});
-
-console.log(
-  `complete: ${values.outputMP4}`
-);
-
-tileServer.kill();
-
-webServer.kill();
+  webServer.kill();
+}
