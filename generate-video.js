@@ -10,7 +10,8 @@ const options = {
     outputMP4: {type: 'string', short: 'm', default: 'videos/output.mp4'},
     fps: {type: 'string', short: 'f', default: '30'},
     duration: {type: 'string', short: 'd'},
-    preview: {type: 'boolean', short: 'p'}
+    preview: {type: 'boolean', short: 'p'},
+    realtime: {type: 'boolean', short: 'r'}
 }
 
 // 引数のチェックと解析
@@ -31,13 +32,6 @@ try {
 } catch (error) {
   console.error(error.message);
   process.exit(1); // エラー終了
-}
-
-if (!values.inputGPX) {
-  console.error(
-    "usage: node generate-video.js route.gpx output.mp4"
-  );
-  process.exit(1);
 }
 
 // GPXコピー
@@ -159,11 +153,8 @@ function parseGPX(xmlDoc) {
       "trkpt"
     );
 
-  for (
-    let i = 0;
-    i < trkpts.length;
-    i++
-  ) {
+  const pre_trkpt = trkpts[0];
+  for (let i = 0; i < trkpts.length; i++) {
 
     const trkpt =
       trkpts[i];
@@ -263,19 +254,28 @@ function createGeoJSON(
   };
 }
 
+let totalFrames;
+if(!values.realtime) {
+  // 動画時間の指定がない場合、総距離から動画時間を決定
+  const videoDuration = values.duration ? values.duration : Math.min(90, Math.max(15, totalDistance * 0.8));
 
-
-// 動画時間の指定がない場合、総距離から動画時間を決定
-const videoDuration = values.duration ? values.duration : Math.min(90, Math.max(15, totalDistance * 0.8));
-
-// 時間からフレーム数を計算
-const totalFrames =
-  Math.floor(
-    videoDuration * values.fps
-  );
-console.log({
-  totalFrames,
-});
+  // 時間からフレーム数を計算
+  totalFrames =
+    Math.floor(
+      videoDuration * values.fps
+    );
+  console.log({
+    totalFrames,
+  });
+} else {
+  const startTime = routeData[0].timestamp;
+  const endTime = routeData[routeData.length-1].timestamp;
+  /**
+   * 1000 = 1s
+   */
+  const totalTime = endTime - startTime;
+  totalFrames = (endTime - startTime)/1000 * values.fps;
+}
 
 
 // タイルサーバ起動
@@ -342,6 +342,8 @@ if(!values.preview) {
 
         TOTAL_FRAMES:
           String(totalFrames),
+        IS_REALTIME:
+          Boolean(values.realtime),
       },
     }
   );

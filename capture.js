@@ -19,8 +19,11 @@ const totalFrames =
 );
 console.log(totalFrames);
 
+const realtime = Boolean(process.env.IS_REALTIME);
+
+if(realtime) console.log(realtime);
 // ページを開く
-await page.goto("http://localhost:5173?capture=1&frames=${totalFrames}", {
+await page.goto("http://localhost:5173?capture=true&&realtime=${realtime}&&frames=${totalFrames}", {
   waitUntil: "networkidle2",
 });
 

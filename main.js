@@ -5,6 +5,7 @@ const map = new maplibregl.Map({
   container: "map",
 
   style: "http://localhost:8080/styles/your_map_style/style.json",
+  //style: "https://demotiles.maplibre.org/style.json",
 
   center: [135.5023, 34.6937],
 
@@ -40,9 +41,17 @@ console.log(defaultTotalFrames);
 const isCapture =
   new URLSearchParams(
     location.search
-  ).get("capture") === "1";
+  ).get("capture") === "true";
+
+const isRealtime =
+  new URLSearchParams(
+    location.search
+  ).get("realtime") === "true";
+
+if(isRealtime)console.log("real");
 
 async function loadGPX() {
+  console.log("Hello");
   const coordinates =
     geojson.features[0].geometry.coordinates;
 
@@ -272,6 +281,14 @@ function createRenderer(routeData) {
       routeData.length - 1
     ].cumulativeDistance;
 
+  const startTime = routeData[0].timestamp;
+
+  const totalTime =
+    routeData[
+      routeData.length - 1
+    ].timestamp -
+    routeData[0].timestamp;
+  
   window.renderFrame =
     function(frame, totalFrames) {
       //console.log(arguments);
@@ -280,11 +297,22 @@ function createRenderer(routeData) {
         frame /
         (totalFrames - 1);
 
-      const targetDistance =
-        totalDistance *
-        progress;
+      let targetDistance;
+      if(!isRealtime) {
+        targetDistance =
+          totalDistance *
+          progress;
+      }else {
+        console.log(totalTime, progress, startTime);
+        targetDistance = 
+          getDistanceAtTime(
+            routeData,
+            totalTime * progress + startTime
+          );
+      }
 
-      
+      console.log(targetDistance);
+
       console.log(
         "renderFrame",
         frame,
@@ -320,6 +348,17 @@ function createRenderer(routeData) {
         }
       });
 
+      const prev =
+        getPositionAtDistance(
+          routeData,
+          targetDistance - 200
+        );
+      const next =
+        getPositionAtDistance(
+          routeData,
+          targetDistance + 200
+        );
+
       map.jumpTo({
         center: [
           position.lng,
@@ -328,7 +367,9 @@ function createRenderer(routeData) {
 
         zoom: 14,
 
-        pitch: 30
+        pitch: 45,
+
+        bearing: calculateBearing(prev, next)
       });
 
       window.lastRenderedFrame = frame;
@@ -374,6 +415,7 @@ function getLineUpToDistance(
   return coordinates;
 }
 
+/*
 function getPositionForFrame(
   frame,
   totalFrames,
@@ -392,6 +434,7 @@ function getPositionForFrame(
     targetDistance
   );
 }
+*/
 
 // スタート地点から指定された距離の座標を元のデータを線形補完して返す
 function getPositionAtDistance(
@@ -467,5 +510,86 @@ function getPositionAtDistance(
 
   return last;
 }
+
+function getDistanceAtTime(
+  routeData,
+  targetTime
+) {
+  if (targetTime <= routeData[0].timestamp) {
+    return 0;
+  }
+
+  const last =
+    routeData[
+      routeData.length - 1
+    ];
+
+  if (
+    targetTime >=
+    last.timestamp
+  ) {
+    return last.cumulativeDistance;
+  }
+
+  for (
+    let i = 1;
+    i < routeData.length;
+    i++
+  ) {
+
+    const prev =
+      routeData[i - 1];
+
+    const next =
+      routeData[i];
+
+    if (
+      targetTime <=
+      next.timestamp
+    ) {
+
+      const t =
+        (
+          targetTime -
+          prev.timestamp
+        )
+        /
+        (
+          next.timestamp -
+          prev.timestamp
+        );
+
+      return (
+        prev.cumulativeDistance +
+          (
+            next.cumulativeDistance -
+            prev.cumulativeDistance
+          ) * t
+      );
+    }
+  }
+
+  return last;
+}
+
+// p1からp2への角度を返す
+function calculateBearing(
+  p1,
+  p2
+) {
+  const dx =
+    p2.lng - p1.lng;
+
+  const dy =
+    p2.lat - p1.lat;
+
+  return (
+    Math.atan2(dx, dy)
+    * 180
+    / Math.PI
+    + 360
+  ) % 360;
+}
+
 
 loadGPX();
